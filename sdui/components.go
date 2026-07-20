@@ -201,6 +201,10 @@ func Poster(url string) Option { return Prop("poster", url) }
 // Backdrop sets a hero backdrop image URL.
 func Backdrop(url string) Option { return Prop("backdrop", url) }
 
+// Logo sets a HeroBanner's clearlogo/title-treatment image URL; when set it
+// renders in place of the text title (ADR 0034).
+func Logo(url string) Option { return Prop("logo", url) }
+
 // Progress sets a 0..1 watched fraction.
 func Progress(f float64) Option { return Prop("progress", f) }
 

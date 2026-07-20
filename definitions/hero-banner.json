@@ -10,7 +10,12 @@
         "type": "Box",
         "props": { "style": { "position": "relative", "p": 6, "gap": 3, "maxWidth": "620px" } },
         "children": [
-          { "type": "Text", "props": { "text": { "$bind": "title" }, "style": { "variant": "3xl", "weight": "bold" } } },
+          {
+            "type": "Box",
+            "props": { "$if": { "$bind": "logo" }, "style": { "height": 92, "maxWidth": 440 } },
+            "children": [{ "type": "Image", "props": { "src": { "$bind": "logo" }, "fit": "contain", "placeholder": " ", "style": { "width": "full", "height": "full" } } }]
+          },
+          { "type": "Text", "props": { "$ifNot": { "$bind": "logo" }, "text": { "$bind": "title" }, "style": { "variant": "3xl", "weight": "bold" } } },
           {
             "type": "Box",
             "props": { "$if": { "$bind": "meta" }, "style": { "direction": "row", "gap": 3, "wrap": true } },
