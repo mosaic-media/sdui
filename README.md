@@ -1,6 +1,6 @@
 # Mosaic SDUI
 
-The published **Server-Driven-UI contract** for [Mosaic](https://github.com/mosaic-media). It is to the interface what [`mosaic-sdk`](https://github.com/mosaic-media/mosaic-sdk) is to content: the single, language-neutral surface a **producer** (the Platform, or a Module) emits and a **client** (the Shell, a future Flutter client) renders — so nobody re-writes it per language.
+The published **Server-Driven-UI contract** for [Mosaic](https://github.com/mosaic-media). It is to the interface what [`sdk`](https://github.com/mosaic-media/sdk) is to content: the single, language-neutral surface a **producer** (the Platform, or a Module) emits and a **client** (the Shell, a future Flutter client) renders — so nobody re-writes it per language.
 
 ## Single source of truth
 
@@ -19,7 +19,7 @@ Two guards keep it honest:
 - **Drift guard** — `scripts/check-generated.sh` regenerates and fails if the committed bindings are stale (run it in CI). Change the schema → regenerate → commit.
 - **Conformance tests** (`sdui/conformance_test.go`) — validate what the hand-written builders *produce*, and every file in `definitions/`, against the schema. So even the ergonomic layer cannot drift from the contract.
 
-**JSON Schema, not protobuf** — the node tree is open (props are an untyped bag by design), it rides GraphQL as JSON, and the definitions and tokens are JSON data. See [ADR 0025](https://github.com/mosaic-media/mosaic-architecture/blob/main/docs/adr/0025-sdui-contract-repository.md).
+**JSON Schema, not protobuf** — the node tree is open (props are an untyped bag by design), it rides GraphQL as JSON, and the definitions and tokens are JSON data. See [ADR 0025](https://github.com/mosaic-media/architecture/blob/main/docs/adr/0025-sdui-contract-repository.md).
 
 ## Layout
 
@@ -42,7 +42,7 @@ Only the ergonomic builders are hand-written; they sit *on top of* the generated
 ## Using it — a Go producer
 
 ```go
-import "github.com/mosaic-media/mosaic-sdui/sdui"
+import "github.com/mosaic-media/sdui/sdui"
 
 home := sdui.Screen(sdui.Child(
     sdui.HeroBanner("Spirited Away",
@@ -66,11 +66,11 @@ home := sdui.Screen(sdui.Child(
 Add it like any Go module:
 
 ```bash
-go get github.com/mosaic-media/mosaic-sdui@v0.1.0
+go get github.com/mosaic-media/sdui@v0.1.0
 ```
 
 For local work across the sibling repos, use a
-`replace github.com/mosaic-media/mosaic-sdui => ../mosaic-sdui` in the consumer's
+`replace github.com/mosaic-media/sdui => ../sdui` in the consumer's
 `go.mod` instead.
 
 ## Using it — a TypeScript client
@@ -89,11 +89,11 @@ import tokens from "@mosaic-media/sdui/tokens.json";
 
 The package is types + JSON data (no runtime code); it's meant for a bundler
 (the Shell uses Vite). Until the first npm release lands you can install straight
-from git: `npm install github:mosaic-media/mosaic-sdui`.
+from git: `npm install github:mosaic-media/sdui`.
 
 ## The standard definitions
 
-The reusable components — `PosterCard`, `HeroBanner`, `Section`, `Badge`, … — live here as `ComponentDefinition` data, not per-client code. A client registers them; a producer emits `{ "type": "HeroBanner", … }` and it renders identically on every client, with the Module shipping **zero** UI code. A Module can ship its own definitions the same way. Only the irreducible **primitives** are per-client native code; definitions compose only those ([ADR 0024](https://github.com/mosaic-media/mosaic-architecture/blob/main/docs/adr/0024-primitives-and-definitions.md)).
+The reusable components — `PosterCard`, `HeroBanner`, `Section`, `Badge`, … — live here as `ComponentDefinition` data, not per-client code. A client registers them; a producer emits `{ "type": "HeroBanner", … }` and it renders identically on every client, with the Module shipping **zero** UI code. A Module can ship its own definitions the same way. Only the irreducible **primitives** are per-client native code; definitions compose only those ([ADR 0024](https://github.com/mosaic-media/architecture/blob/main/docs/adr/0024-primitives-and-definitions.md)).
 
 ## Regenerating
 
@@ -128,4 +128,4 @@ git tag v0.1.0 && git push origin v0.1.0
 
 ## Licence
 
-**Apache-2.0** (see [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE)). A contract surface must be permissive so a Module may build its UI against it under any licence, as the SDK is ([ADR 0022](https://github.com/mosaic-media/mosaic-architecture/blob/main/docs/adr/0022-licensing.md), [ADR 0025](https://github.com/mosaic-media/mosaic-architecture/blob/main/docs/adr/0025-sdui-contract-repository.md)).
+**Apache-2.0** (see [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE)). A contract surface must be permissive so a Module may build its UI against it under any licence, as the SDK is ([ADR 0022](https://github.com/mosaic-media/architecture/blob/main/docs/adr/0022-licensing.md), [ADR 0025](https://github.com/mosaic-media/architecture/blob/main/docs/adr/0025-sdui-contract-repository.md)).
