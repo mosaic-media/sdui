@@ -12,3 +12,8 @@ plugins:
   - local: protoc-gen-connect-go
     out: gen
     opt: paths=source_relative
+  - local: ["npx", "protoc-gen-es"]
+    out: gen-ts
+    opt:
+      - target=ts
+      - import_extension=none
