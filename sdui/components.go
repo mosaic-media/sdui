@@ -4,7 +4,11 @@ package sdui
 // — the same types the client renders from the shared definition library
 // (../definitions). A producer uses these to compose pages; the props keys match
 // each definition's contract.
-//
+
+import (
+	sduiv1 "github.com/mosaic-media/sdui/gen/mosaic/sdui/v1"
+)
+
 // Node type names.
 const (
 	TypeScreen          = "Screen"
@@ -38,56 +42,63 @@ const (
 	TypePagination      = "Pagination"
 )
 
-// Option configures a Node after its required fields are set.
-type Option func(*Node)
+// Option configures a node during construction.
+type Option func(*builder)
+
+// builder accumulates a node while options run; its open props bag is frozen into
+// the node's protobuf Struct once all options have applied.
+type builder struct {
+	node  Node
+	props map[string]any
+}
 
 // Prop sets an arbitrary prop. The escape hatch for anything without sugar.
 func Prop(key string, val any) Option {
-	return func(n *Node) {
-		if n.Props == nil {
-			n.Props = Props{}
+	return func(b *builder) {
+		if b.props == nil {
+			b.props = Props{}
 		}
-		n.Props[key] = val
+		b.props[key] = val
 	}
 }
 
 // ID sets a stable node id.
-func ID(id string) Option { return func(n *Node) { n.ID = &id } }
+func ID(id string) Option { return func(b *builder) { b.node.Id = id } }
 
 // Act sets the node's primary action.
 func Act(a Action) Option { return Prop("action", a) }
 
 // Child appends child nodes.
 func Child(nodes ...Node) Option {
-	return func(n *Node) { n.Children = append(n.Children, nodes...) }
+	return func(b *builder) { b.node.Children = append(b.node.Children, nodes...) }
 }
 
 // Slot sets a named slot's nodes.
 func Slot(name string, nodes ...Node) Option {
-	return func(n *Node) {
-		if n.Slots == nil {
-			n.Slots = map[string][]Node{}
+	return func(b *builder) {
+		if b.node.Slots == nil {
+			b.node.Slots = map[string]*sduiv1.NodeList{}
 		}
-		n.Slots[name] = append(n.Slots[name], nodes...)
+		list := b.node.Slots[name]
+		if list == nil {
+			list = &sduiv1.NodeList{}
+			b.node.Slots[name] = list
+		}
+		list.Nodes = append(list.Nodes, nodes...)
 	}
 }
 
 // Component is the generic constructor — for a type without a helper, or a
 // module's own component.
-func Component(nodeType string, opts ...Option) Node {
-	n := Node{Type: nodeType}
-	for _, o := range opts {
-		o(&n)
-	}
-	return n
-}
+func Component(nodeType string, opts ...Option) Node { return build(nodeType, nil, opts) }
 
 func build(nodeType string, props Props, opts []Option) Node {
-	n := Node{Type: nodeType, Props: props}
+	b := &builder{node: &sduiv1.UINode{Type: nodeType}, props: props}
 	for _, o := range opts {
-		o(&n)
+		o(b)
 	}
-	return n
+	b.node.Props = structFromProps(b.props)
+	return b.node
 }
 
 // ── containers ───────────────────────────────────────────────────────────────

@@ -1,7 +1,13 @@
 package sdui
 
-// Action constructors. The generated Action uses pointer fields for optionals
-// (so the wire omits absent ones); these constructors hide that.
+// Action constructors. The Action uses pointer fields for optionals (so the JSON
+// omits absent ones); these constructors hide that.
+
+import (
+	"encoding/json"
+
+	"google.golang.org/protobuf/encoding/protojson"
+)
 
 func strp(s string) *string {
 	if s == "" {
@@ -31,9 +37,10 @@ func Query(query string, variables map[string]any, into string) Action {
 	return Action{Kind: KindQuery, Query: strp(query), Variables: variables, Into: strp(into)}
 }
 
-// OpenOverlay presents a node as a modal/sheet/drawer.
+// OpenOverlay presents a node as a modal/sheet/drawer. The node rides inside the
+// action's open bag, so it is rendered to its JSON object form.
 func OpenOverlay(surface Surface, node Node) Action {
-	return Action{Kind: KindOpenOverlay, Surface: &surface, Node: &node}
+	return Action{Kind: KindOpenOverlay, Surface: &surface, Node: nodeToMap(node)}
 }
 
 // CloseOverlay dismisses the topmost overlay.
@@ -54,4 +61,22 @@ func Toast(message string, tone Tone) Action {
 // Sequence runs several actions in order.
 func Sequence(actions ...Action) Action {
 	return Action{Kind: KindSequence, Actions: actions}
+}
+
+// nodeToMap renders a node to the JSON object form that rides inside an action's
+// open bag (OpenOverlay). Nodes embedded in an action are rare; when absent this
+// is never called.
+func nodeToMap(node Node) map[string]any {
+	if node == nil {
+		return nil
+	}
+	b, err := protojson.Marshal(node)
+	if err != nil {
+		return nil
+	}
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		return nil
+	}
+	return m
 }

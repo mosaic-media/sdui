@@ -1,61 +1,115 @@
 // Package sdui is the Go binding of the Mosaic Server-Driven-UI contract — the
-// producer side. The Platform and Modules build a tree of Nodes carrying Action
-// envelopes; a client renders it.
+// producer side. The Platform and Modules build a tree of Nodes (generated
+// protobuf UINodes) carrying Action envelopes; a client renders it.
 //
-// The wire types are GENERATED from the single source of truth,
-// schema/sdui.schema.json, into the contract subpackage — see contract.gen.go
-// (do not hand-edit it; run scripts/generate.sh). This file provides the
-// producer-facing ergonomics on top of the generated types: friendly aliases,
-// constants, and the constructors in actions.go / components.go. A conformance
-// test validates what the builders produce against the schema, so the
-// hand-written layer cannot drift from the generated contract.
+// This is the faithful protobuf port (ADR 0044): the UINode tree is the typed
+// mosaic.sdui.v1.UINode, so it rides the transport (RegionUpdate.ui_node) as a
+// typed message. Actions and enums keep their JSON form inside the open props
+// bag — props is a protobuf Struct, so anything in it is JSON-encoded regardless.
+// A later ergonomics redesign may hoist actions and enums into typed fields;
+// this port changes only the tree type, not the wire.
 package sdui
 
-//go:generate bash ../scripts/generate.sh
+import (
+	"encoding/json"
 
-import "github.com/mosaic-media/sdui/sdui/contract"
+	"google.golang.org/protobuf/types/known/structpb"
 
-// Contract types, re-exported from the generated package so producers import
-// only "sdui".
-type (
-	Node                = contract.UINode
-	Action              = contract.Action
-	ActionKind          = contract.ActionKind
-	Tone                = contract.Tone
-	Surface             = contract.Surface
-	ComponentDefinition = contract.ComponentDefinition
+	sduiv1 "github.com/mosaic-media/sdui/gen/mosaic/sdui/v1"
 )
 
-// Props is a component's open property bag.
+// Node is a UI node — a pointer to the generated protobuf UINode (protobuf
+// messages carry a do-not-copy marker, so producers pass them by pointer).
+type Node = *sduiv1.UINode
+
+// ComponentDefinition is a component expressed as data (ADR 0024).
+type ComponentDefinition = *sduiv1.ComponentDefinition
+
+// Props is a component's open property bag. It is JSON-encoded into the node's
+// protobuf Struct when the node is built.
 type Props = map[string]any
 
-// Action kinds (from the schema's ActionKind enum).
+// ActionKind, Tone and Surface are the string enums that ride inside the open
+// props bag. The generated protobuf enums exist for a future typed-action
+// redesign; the faithful port keeps these as the JSON strings clients read.
+type (
+	ActionKind = string
+	Tone       = string
+	Surface    = string
+)
+
+// Action is a declarative behaviour envelope — data, never code. Faithful port:
+// actions ride inside the open props bag as JSON, so this is a JSON-shaped struct
+// rather than the (for now unused) protobuf Action message. Each kind uses a
+// subset of the fields; the constructors in actions.go hide the pointer optionals.
+type Action struct {
+	Kind      ActionKind     `json:"kind"`
+	Screen    *string        `json:"screen,omitempty"`
+	Params    map[string]any `json:"params,omitempty"`
+	URL       *string        `json:"url,omitempty"`
+	Mutation  *string        `json:"mutation,omitempty"`
+	Input     map[string]any `json:"input,omitempty"`
+	Query     *string        `json:"query,omitempty"`
+	Variables map[string]any `json:"variables,omitempty"`
+	Into      *string        `json:"into,omitempty"`
+	Surface   *Surface       `json:"surface,omitempty"`
+	Node      map[string]any `json:"node,omitempty"`
+	PartID    *string        `json:"partId,omitempty"`
+	NodeID    *string        `json:"nodeId,omitempty"`
+	Message   *string        `json:"message,omitempty"`
+	Tone      *Tone          `json:"tone,omitempty"`
+	Actions   []Action       `json:"actions,omitempty"`
+}
+
+// Action kinds — the JSON discriminator values.
 const (
-	KindNavigate     = contract.Navigate
-	KindBack         = contract.Back
-	KindOpenURL      = contract.OpenURL
-	KindInvoke       = contract.Invoke
-	KindQuery        = contract.Query
-	KindOpenOverlay  = contract.OpenOverlay
-	KindCloseOverlay = contract.CloseOverlay
-	KindPlayPart     = contract.PlayPart
-	KindToast        = contract.Toast
-	KindSequence     = contract.Sequence
+	KindNavigate     = "navigate"
+	KindBack         = "back"
+	KindOpenURL      = "openUrl"
+	KindInvoke       = "invoke"
+	KindQuery        = "query"
+	KindOpenOverlay  = "openOverlay"
+	KindCloseOverlay = "closeOverlay"
+	KindPlayPart     = "playPart"
+	KindToast        = "toast"
+	KindSequence     = "sequence"
 )
 
 // Tones.
 const (
-	ToneNeutral = contract.Neutral
-	ToneAccent  = contract.Accent
-	ToneSuccess = contract.Success
-	ToneWarning = contract.Warning
-	ToneDanger  = contract.Danger
-	ToneInfo    = contract.Info
+	ToneNeutral = "neutral"
+	ToneAccent  = "accent"
+	ToneSuccess = "success"
+	ToneWarning = "warning"
+	ToneDanger  = "danger"
+	ToneInfo    = "info"
 )
 
 // Overlay surfaces.
 const (
-	SurfaceModal  = contract.Modal
-	SurfaceSheet  = contract.Sheet
-	SurfaceDrawer = contract.Drawer
+	SurfaceModal  = "modal"
+	SurfaceSheet  = "sheet"
+	SurfaceDrawer = "drawer"
 )
+
+// structFromProps JSON-encodes an open props bag into a protobuf Struct — the
+// encoding that lets actions, nested objects and typed slices ride the open bag
+// exactly as they did on the JSON wire. Returns nil for an empty bag.
+func structFromProps(props map[string]any) *structpb.Struct {
+	if len(props) == 0 {
+		return nil
+	}
+	b, err := json.Marshal(props)
+	if err != nil {
+		return nil
+	}
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		return nil
+	}
+	s, err := structpb.NewStruct(m)
+	if err != nil {
+		return nil
+	}
+	return s
+}

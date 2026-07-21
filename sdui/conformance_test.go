@@ -7,12 +7,15 @@ import (
 	"testing"
 
 	"github.com/santhosh-tekuri/jsonschema/v5"
+
 	"github.com/mosaic-media/sdui/sdui"
 )
 
-// These tests make schema/sdui.schema.json the ENFORCED source of truth: what
-// the hand-written builders produce, and the standard definition files, are
-// validated against the schema. If either drifts from the schema, this fails.
+// These tests keep schema/sdui.schema.json honest for the parts still expressed
+// as JSON: the Action envelope (which rides inside the open props bag) and the
+// standard definition files. The built UINode tree itself is now the protobuf
+// mosaic.sdui.v1.UINode (ADR 0044) — a typed message, not JSON-Schema-shaped — so
+// it is exercised structurally in sdui_test.go rather than validated here.
 
 func compile(t *testing.T, ptr string) *jsonschema.Schema {
 	t.Helper()
@@ -35,13 +38,6 @@ func asAny(t *testing.T, v any) any {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	return out
-}
-
-func TestBuiltTreeConformsToSchema(t *testing.T) {
-	sch := compile(t, "UINode")
-	if err := sch.Validate(asAny(t, homeScreen())); err != nil {
-		t.Errorf("home screen does not conform to the UINode schema:\n%v", err)
-	}
 }
 
 func TestActionsConformToSchema(t *testing.T) {

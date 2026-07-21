@@ -2,8 +2,9 @@ package sdui_test
 
 import (
 	"encoding/json"
-	"strings"
 	"testing"
+
+	"google.golang.org/protobuf/encoding/protojson"
 
 	"github.com/mosaic-media/sdui/sdui"
 )
@@ -32,35 +33,79 @@ func homeScreen() sdui.Node {
 	)
 }
 
-func TestHomeScreenMarshals(t *testing.T) {
-	b, err := json.Marshal(homeScreen())
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
+// find walks the tree (children and slots) for the first node of the given type.
+func find(n sdui.Node, typ string) sdui.Node {
+	if n == nil {
+		return nil
 	}
-	s := string(b)
-	for _, want := range []string{
-		`"type":"Screen"`,
-		`"type":"HeroBanner"`,
-		`"type":"Carousel"`,
-		`"type":"PosterCard"`,
-		`"kind":"playPart"`,
-		`"partId":"demo-part"`,
-		`"progress":0.6`,
-		`"slots":{"actions":`,
-	} {
-		if !strings.Contains(s, want) {
-			t.Errorf("marshalled tree missing %q\n%s", want, s)
+	if n.GetType() == typ {
+		return n
+	}
+	for _, c := range n.GetChildren() {
+		if got := find(c, typ); got != nil {
+			return got
 		}
+	}
+	for _, list := range n.GetSlots() {
+		for _, c := range list.GetNodes() {
+			if got := find(c, typ); got != nil {
+				return got
+			}
+		}
+	}
+	return nil
+}
+
+func TestHomeScreenBuilds(t *testing.T) {
+	root := homeScreen()
+	if root.GetType() != "Screen" {
+		t.Fatalf("root type = %q, want Screen", root.GetType())
+	}
+	if len(root.GetChildren()) != 2 {
+		t.Fatalf("root children = %d, want 2", len(root.GetChildren()))
+	}
+
+	// The hero carries its title in props and two buttons in the actions slot.
+	hero := find(root, "HeroBanner")
+	if hero == nil {
+		t.Fatal("no HeroBanner")
+	}
+	if hero.GetProps().AsMap()["title"] != "Spirited Away" {
+		t.Fatalf("hero title = %v", hero.GetProps().AsMap()["title"])
+	}
+	actions := hero.GetSlots()["actions"]
+	if actions == nil || len(actions.GetNodes()) != 2 {
+		t.Fatalf("hero actions slot = %v, want 2 nodes", actions)
+	}
+
+	// The first button's action is a playPart carrying the part id — an Action
+	// riding inside the open props bag.
+	play := actions.GetNodes()[0].GetProps().AsMap()["action"].(map[string]any)
+	if play["kind"] != "playPart" || play["partId"] != "demo-part" {
+		t.Fatalf("play action = %v, want playPart/demo-part", play)
+	}
+
+	if find(root, "Carousel") == nil {
+		t.Fatal("no Carousel")
+	}
+
+	// The first PosterCard (Cowboy Bebop) carries a 0.6 progress in props.
+	card := find(root, "PosterCard")
+	if card == nil {
+		t.Fatal("no PosterCard")
+	}
+	if got := card.GetProps().AsMap()["progress"]; got != 0.6 {
+		t.Fatalf("card progress = %v, want 0.6", got)
 	}
 }
 
 func TestActionsAreCleanPerKind(t *testing.T) {
 	cases := map[string]sdui.Action{
-		`{"kind":"navigate","screen":"home"}`:                      sdui.Navigate("home", nil),
-		`{"kind":"playPart","partId":"p1"}`:                        sdui.Play("p1"),
-		`{"kind":"toast","message":"hi","tone":"success"}`:         sdui.Toast("hi", sdui.ToneSuccess),
-		`{"kind":"invoke","mutation":"importContent"}`:             sdui.Invoke("importContent", nil),
-		`{"kind":"back"}`:                                          sdui.Back(),
+		`{"kind":"navigate","screen":"home"}`:              sdui.Navigate("home", nil),
+		`{"kind":"playPart","partId":"p1"}`:                sdui.Play("p1"),
+		`{"kind":"toast","message":"hi","tone":"success"}`: sdui.Toast("hi", sdui.ToneSuccess),
+		`{"kind":"invoke","mutation":"importContent"}`:     sdui.Invoke("importContent", nil),
+		`{"kind":"back"}`:                                  sdui.Back(),
 	}
 	for want, a := range cases {
 		b, err := json.Marshal(a)
@@ -74,13 +119,15 @@ func TestActionsAreCleanPerKind(t *testing.T) {
 }
 
 func TestRoundTrip(t *testing.T) {
-	in := homeScreen()
-	b, _ := json.Marshal(in)
-	var out sdui.Node
-	if err := json.Unmarshal(b, &out); err != nil {
+	b, err := protojson.Marshal(homeScreen())
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	out := sdui.Component("") // an empty node to unmarshal into
+	if err := protojson.Unmarshal(b, out); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if out.Type != "Screen" || len(out.Children) != 2 {
-		t.Fatalf("round-trip lost structure: type=%q children=%d", out.Type, len(out.Children))
+	if out.GetType() != "Screen" || len(out.GetChildren()) != 2 {
+		t.Fatalf("round-trip lost structure: type=%q children=%d", out.GetType(), len(out.GetChildren()))
 	}
 }
