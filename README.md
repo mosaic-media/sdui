@@ -94,6 +94,12 @@ npm install @mosaic-media/sdui
 import type { UINode, Action, ComponentDefinition } from "@mosaic-media/sdui";
 import heroBanner from "@mosaic-media/sdui/definitions/hero-banner.json";
 import tokens from "@mosaic-media/sdui/tokens.json";
+
+// The generated protobuf session transport (ADR 0041) — the SessionService
+// descriptor + message schemas a Connect-Web client speaks, and the wire UINode
+// message. Pair with @connectrpc/connect + @connectrpc/connect-web.
+import { SessionService, RegionUpdate_Op } from "@mosaic-media/sdui/session";
+import { UINodeSchema } from "@mosaic-media/sdui/sdui-pb";
 ```
 
 The package is types + JSON data (no runtime code); it's meant for a bundler
