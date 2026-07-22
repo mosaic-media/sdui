@@ -1,103 +1,412 @@
 {
   "//": "Authoring spec for the Mosaic SDUI ui layer — the source of truth for the ergonomic authoring API. Run `go run ./tools/genui` to regenerate ui/components.gen.go and ts/ui.ts from this file; do not hand-edit those. `go run ./tools/genui -lint` cross-checks this spec against definitions/*.json (every definition must have a component here, and every prop a definition's template binds must be exposed by some helper). See tools/genui.",
   "tones": [
-    { "const": "ToneNeutral", "sdui": "ToneNeutral", "value": "neutral" },
-    { "const": "ToneSuccess", "sdui": "ToneSuccess", "value": "success" },
-    { "const": "ToneWarning", "sdui": "ToneWarning", "value": "warning" },
-    { "const": "ToneDanger", "sdui": "ToneDanger", "value": "danger" },
-    { "const": "ToneInfo", "sdui": "ToneInfo", "value": "info" }
+    {
+      "const": "ToneNeutral",
+      "sdui": "ToneNeutral",
+      "value": "neutral"
+    },
+    {
+      "const": "ToneSuccess",
+      "sdui": "ToneSuccess",
+      "value": "success"
+    },
+    {
+      "const": "ToneWarning",
+      "sdui": "ToneWarning",
+      "value": "warning"
+    },
+    {
+      "const": "ToneDanger",
+      "sdui": "ToneDanger",
+      "value": "danger"
+    },
+    {
+      "const": "ToneInfo",
+      "sdui": "ToneInfo",
+      "value": "info"
+    }
   ],
   "actions": [
     {
-      "func": "Navigate", "sdui": "Navigate", "kind": "navigate", "enum": "Navigate",
+      "func": "Navigate",
+      "sdui": "Navigate",
+      "kind": "navigate",
+      "enum": "Navigate",
       "doc": "Navigate pushes a screen, optionally with params.",
-      "args": [{ "name": "screen", "type": "string", "field": "screen" }],
-      "optional": [{ "name": "params", "type": "props", "field": "params" }]
+      "args": [
+        {
+          "name": "screen",
+          "type": "string",
+          "field": "screen"
+        }
+      ],
+      "optional": [
+        {
+          "name": "params",
+          "type": "props",
+          "field": "params"
+        }
+      ]
     },
     {
-      "func": "Invoke", "sdui": "Invoke", "kind": "invoke", "enum": "Invoke",
+      "func": "Invoke",
+      "sdui": "Invoke",
+      "kind": "invoke",
+      "enum": "Invoke",
       "doc": "Invoke runs a server mutation, optionally with input.",
-      "args": [{ "name": "mutation", "type": "string", "field": "mutation" }],
-      "optional": [{ "name": "input", "type": "props", "field": "input" }]
+      "args": [
+        {
+          "name": "mutation",
+          "type": "string",
+          "field": "mutation"
+        }
+      ],
+      "optional": [
+        {
+          "name": "input",
+          "type": "props",
+          "field": "input"
+        }
+      ]
     },
     {
-      "func": "Play", "sdui": "Play", "kind": "playPart", "enum": "PlayPart",
+      "func": "Play",
+      "sdui": "Play",
+      "kind": "playPart",
+      "enum": "PlayPart",
       "doc": "Play starts playback of a part.",
-      "args": [{ "name": "partId", "type": "string", "field": "partId" }],
+      "args": [
+        {
+          "name": "partId",
+          "type": "string",
+          "field": "partId"
+        }
+      ],
       "optional": []
     },
     {
-      "func": "OpenURL", "sdui": "OpenURL", "kind": "openUrl", "enum": "OpenURL",
+      "func": "OpenURL",
+      "sdui": "OpenURL",
+      "kind": "openUrl",
+      "enum": "OpenURL",
       "doc": "OpenURL opens an external URL (the client validates the scheme).",
-      "args": [{ "name": "url", "type": "string", "field": "url" }],
+      "args": [
+        {
+          "name": "url",
+          "type": "string",
+          "field": "url"
+        }
+      ],
       "optional": []
     }
   ],
   "sugar": [
-    { "func": "OnTap", "key": "action", "type": "Action", "doc": "OnTap sets the node's primary action." },
-    { "func": "Title", "key": "title", "type": "string", "doc": "Title sets a screen or component title." },
-    { "func": "Subtitle", "key": "subtitle", "type": "string", "doc": "Subtitle sets a card/row subtitle." },
-    { "func": "Poster", "key": "poster", "type": "string", "doc": "Poster sets a poster image URL." },
-    { "func": "Backdrop", "key": "backdrop", "type": "string", "doc": "Backdrop sets a hero backdrop image URL." },
-    { "func": "Logo", "key": "logo", "type": "string", "doc": "Logo sets a hero clearlogo/title-treatment image URL." },
-    { "func": "Overview", "key": "overview", "type": "string", "doc": "Overview sets a synopsis/overview string." },
-    { "func": "Progress", "key": "progress", "type": "number", "doc": "Progress sets a 0..1 watched fraction." },
-    { "func": "BadgeText", "key": "badge", "type": "string", "doc": "BadgeText sets a corner badge on a card." },
-    { "func": "ActionLabel", "key": "actionLabel", "type": "string", "doc": "ActionLabel sets a Section's \"see all\" action label (paired with OnTap)." },
-    { "func": "Meta", "key": "meta", "type": "[]string", "doc": "Meta sets a hero's meta line (year, type, rating)." },
-    { "func": "Genres", "key": "genres", "type": "[]string", "doc": "Genres sets a DetailHeader's genre list." }
+    {
+      "func": "OnTap",
+      "key": "action",
+      "type": "Action",
+      "doc": "OnTap sets the node's primary action."
+    },
+    {
+      "func": "Title",
+      "key": "title",
+      "type": "string",
+      "doc": "Title sets a screen or component title."
+    },
+    {
+      "func": "Subtitle",
+      "key": "subtitle",
+      "type": "string",
+      "doc": "Subtitle sets a card/row subtitle."
+    },
+    {
+      "func": "Poster",
+      "key": "poster",
+      "type": "string",
+      "doc": "Poster sets a poster image URL."
+    },
+    {
+      "func": "Backdrop",
+      "key": "backdrop",
+      "type": "string",
+      "doc": "Backdrop sets a hero backdrop image URL."
+    },
+    {
+      "func": "Logo",
+      "key": "logo",
+      "type": "string",
+      "doc": "Logo sets a hero clearlogo/title-treatment image URL."
+    },
+    {
+      "func": "Overview",
+      "key": "overview",
+      "type": "string",
+      "doc": "Overview sets a synopsis/overview string."
+    },
+    {
+      "func": "Progress",
+      "key": "progress",
+      "type": "number",
+      "doc": "Progress sets a 0..1 watched fraction."
+    },
+    {
+      "func": "BadgeText",
+      "key": "badge",
+      "type": "string",
+      "doc": "BadgeText sets a corner badge on a card."
+    },
+    {
+      "func": "ActionLabel",
+      "key": "actionLabel",
+      "type": "string",
+      "doc": "ActionLabel sets a Section's \"see all\" action label (paired with OnTap)."
+    },
+    {
+      "func": "Meta",
+      "key": "meta",
+      "type": "[]string",
+      "doc": "Meta sets a hero's meta line (year, type, rating)."
+    },
+    {
+      "func": "Genres",
+      "key": "genres",
+      "type": "[]string",
+      "doc": "Genres sets a DetailHeader's genre list."
+    },
+    {
+      "func": "ResumeAt",
+      "key": "resumeAt",
+      "type": "number",
+      "doc": "ResumeAt sets the position in seconds a Player starts from (ADR 0046)."
+    },
+    {
+      "func": "MimeType",
+      "key": "mimeType",
+      "type": "string",
+      "doc": "MimeType sets the media type a Player should expect, so a client can pick a pipeline before it fetches."
+    }
   ],
   "slots": [
-    { "func": "Actions", "name": "actions", "doc": "Actions fills the \"actions\" slot (a hero's CTA row)." },
-    { "func": "Aside", "name": "aside", "doc": "Aside fills the \"aside\" slot (a hero's docked poster)." }
+    {
+      "func": "Actions",
+      "name": "actions",
+      "doc": "Actions fills the \"actions\" slot (a hero's CTA row)."
+    },
+    {
+      "func": "Aside",
+      "name": "aside",
+      "doc": "Aside fills the \"aside\" slot (a hero's docked poster)."
+    }
   ],
   "components": [
-    { "func": "Screen", "type": "Screen", "doc": "Screen is the root of a server-defined page." },
-    { "func": "Section", "type": "Section", "doc": "Section is a titled band.",
-      "positional": [{ "name": "title", "key": "title", "type": "string" }] },
-    { "func": "Carousel", "type": "Carousel", "doc": "Carousel is a horizontal snap-scrolling rail." },
-    { "func": "Grid", "type": "Grid", "doc": "Grid is a responsive auto-fill grid." },
-    { "func": "Stack", "type": "Stack", "doc": "Stack arranges children; direction is \"horizontal\" or \"vertical\".",
+    {
+      "func": "Screen",
+      "type": "Screen",
+      "doc": "Screen is the root of a server-defined page."
+    },
+    {
+      "func": "Section",
+      "type": "Section",
+      "doc": "Section is a titled band.",
       "positional": [
-        { "name": "direction", "key": "direction", "type": "string" },
-        { "name": "gap", "key": "gap", "type": "int" }
-      ] },
-    { "func": "Hero", "type": "HeroBanner", "doc": "Hero is a featured banner. Fill its call-to-action row with Actions.",
-      "positional": [{ "name": "title", "key": "title", "type": "string" }] },
-    { "func": "PosterCard", "type": "PosterCard", "doc": "PosterCard renders a work/item card.",
+        {
+          "name": "title",
+          "key": "title",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "func": "Carousel",
+      "type": "Carousel",
+      "doc": "Carousel is a horizontal snap-scrolling rail."
+    },
+    {
+      "func": "Grid",
+      "type": "Grid",
+      "doc": "Grid is a responsive auto-fill grid."
+    },
+    {
+      "func": "Stack",
+      "type": "Stack",
+      "doc": "Stack arranges children; direction is \"horizontal\" or \"vertical\".",
       "positional": [
-        { "name": "title", "key": "title", "type": "string" },
-        { "name": "mediaType", "key": "mediaType", "type": "string" }
-      ] },
-    { "func": "Button", "type": "Button", "doc": "Button carries an action; variant is primary/secondary/ghost/danger.",
+        {
+          "name": "direction",
+          "key": "direction",
+          "type": "string"
+        },
+        {
+          "name": "gap",
+          "key": "gap",
+          "type": "int"
+        }
+      ]
+    },
+    {
+      "func": "Hero",
+      "type": "HeroBanner",
+      "doc": "Hero is a featured banner. Fill its call-to-action row with Actions.",
       "positional": [
-        { "name": "label", "key": "label", "type": "string" },
-        { "name": "variant", "key": "variant", "type": "string" }
-      ] },
-    { "func": "Badge", "type": "Badge", "doc": "Badge is a small pill; tone is one of the Tone values.",
+        {
+          "name": "title",
+          "key": "title",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "func": "PosterCard",
+      "type": "PosterCard",
+      "doc": "PosterCard renders a work/item card.",
       "positional": [
-        { "name": "label", "key": "label", "type": "string" },
-        { "name": "tone", "key": "tone", "type": "string" }
-      ] },
-    { "func": "Banner", "type": "Banner", "doc": "Banner is an inline message; tone is one of the Tone values.",
+        {
+          "name": "title",
+          "key": "title",
+          "type": "string"
+        },
+        {
+          "name": "mediaType",
+          "key": "mediaType",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "func": "Button",
+      "type": "Button",
+      "doc": "Button carries an action; variant is primary/secondary/ghost/danger.",
       "positional": [
-        { "name": "message", "key": "message", "type": "string" },
-        { "name": "tone", "key": "tone", "type": "string" }
-      ] },
-    { "func": "DetailHeader", "type": "DetailHeader", "doc": "DetailHeader renders a node's metadata (title, meta, genres).",
-      "positional": [{ "name": "title", "key": "title", "type": "string" }] },
-    { "func": "EpisodeRow", "type": "EpisodeRow", "doc": "EpisodeRow renders one episode under a season.",
-      "positional": [{ "name": "title", "key": "title", "type": "string" }] },
-    { "func": "PersonChip", "type": "PersonChip", "doc": "PersonChip is a cast/crew chip.",
-      "positional": [{ "name": "name", "key": "name", "type": "string" }] },
-    { "func": "GenreTag", "type": "GenreTag", "doc": "GenreTag is a genre chip.",
-      "positional": [{ "name": "label", "key": "label", "type": "string" }] },
-    { "func": "EmptyState", "type": "EmptyState", "doc": "EmptyState is a titled empty placeholder.", "variadic": false,
+        {
+          "name": "label",
+          "key": "label",
+          "type": "string"
+        },
+        {
+          "name": "variant",
+          "key": "variant",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "func": "Badge",
+      "type": "Badge",
+      "doc": "Badge is a small pill; tone is one of the Tone values.",
       "positional": [
-        { "name": "icon", "key": "icon", "type": "string" },
-        { "name": "title", "key": "title", "type": "string" }
-      ] },
-    { "func": "Component", "type": "", "generic": true,
-      "doc": "Component is the generic constructor for a type without a helper (a standard component like SeasonSelector, or a module's own)." }
+        {
+          "name": "label",
+          "key": "label",
+          "type": "string"
+        },
+        {
+          "name": "tone",
+          "key": "tone",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "func": "Banner",
+      "type": "Banner",
+      "doc": "Banner is an inline message; tone is one of the Tone values.",
+      "positional": [
+        {
+          "name": "message",
+          "key": "message",
+          "type": "string"
+        },
+        {
+          "name": "tone",
+          "key": "tone",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "func": "DetailHeader",
+      "type": "DetailHeader",
+      "doc": "DetailHeader renders a node's metadata (title, meta, genres).",
+      "positional": [
+        {
+          "name": "title",
+          "key": "title",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "func": "EpisodeRow",
+      "type": "EpisodeRow",
+      "doc": "EpisodeRow renders one episode under a season.",
+      "positional": [
+        {
+          "name": "title",
+          "key": "title",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "func": "PersonChip",
+      "type": "PersonChip",
+      "doc": "PersonChip is a cast/crew chip.",
+      "positional": [
+        {
+          "name": "name",
+          "key": "name",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "func": "GenreTag",
+      "type": "GenreTag",
+      "doc": "GenreTag is a genre chip.",
+      "positional": [
+        {
+          "name": "label",
+          "key": "label",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "func": "Player",
+      "type": "Player",
+      "doc": "Player renders a video surface over a server-issued playback ticket (ADR 0047). The client owns the decoding pipeline and the transport controls; every field here is server-decided.",
+      "positional": [
+        {
+          "name": "src",
+          "key": "src",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "func": "EmptyState",
+      "type": "EmptyState",
+      "doc": "EmptyState is a titled empty placeholder.",
+      "variadic": false,
+      "positional": [
+        {
+          "name": "icon",
+          "key": "icon",
+          "type": "string"
+        },
+        {
+          "name": "title",
+          "key": "title",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "func": "Component",
+      "type": "",
+      "generic": true,
+      "doc": "Component is the generic constructor for a type without a helper (a standard component like SeasonSelector, or a module's own)."
+    }
   ]
 }

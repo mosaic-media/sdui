@@ -82,6 +82,11 @@ export function GenreTag(label: string, ...els: Elish[]): Element {
   return compose("GenreTag", { label }, els);
 }
 
+/** Player renders a video surface over a server-issued playback ticket (ADR 0047). The client owns the decoding pipeline and the transport controls; every field here is server-decided. */
+export function Player(src: string, ...els: Elish[]): Element {
+  return compose("Player", { src }, els);
+}
+
 /** EmptyState is a titled empty placeholder. */
 export function EmptyState(icon: string, title: string): Element {
   return compose("EmptyState", { icon, title }, []);
@@ -164,6 +169,16 @@ export function Meta(...v: string[]): El {
 /** Genres sets a DetailHeader's genre list. */
 export function Genres(...v: string[]): El {
   return Prop("genres", v);
+}
+
+/** ResumeAt sets the position in seconds a Player starts from (ADR 0046). */
+export function ResumeAt(v: number): El {
+  return Prop("resumeAt", v);
+}
+
+/** MimeType sets the media type a Player should expect, so a client can pick a pipeline before it fetches. */
+export function MimeType(v: string): El {
+  return Prop("mimeType", v);
 }
 
 // Tone values (the open-bag string encoding), mirroring the Go Tone constants.

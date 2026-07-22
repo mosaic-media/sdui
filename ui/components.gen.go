@@ -72,6 +72,11 @@ func GenreTag(label string, els ...El) *Element {
 	return compose("GenreTag", map[string]any{"label": label}, els)
 }
 
+// Player renders a video surface over a server-issued playback ticket (ADR 0047). The client owns the decoding pipeline and the transport controls; every field here is server-decided.
+func Player(src string, els ...El) *Element {
+	return compose("Player", map[string]any{"src": src}, els)
+}
+
 // EmptyState is a titled empty placeholder.
 func EmptyState(icon string, title string) *Element {
 	return compose("EmptyState", map[string]any{"icon": icon, "title": title}, nil)
@@ -125,6 +130,12 @@ func Meta(v ...string) El { return Prop("meta", v) }
 
 // Genres sets a DetailHeader's genre list.
 func Genres(v ...string) El { return Prop("genres", v) }
+
+// ResumeAt sets the position in seconds a Player starts from (ADR 0046).
+func ResumeAt(v float64) El { return Prop("resumeAt", v) }
+
+// MimeType sets the media type a Player should expect, so a client can pick a pipeline before it fetches.
+func MimeType(v string) El { return Prop("mimeType", v) }
 
 // Tone values (the open-bag string encoding), re-exported from the producer binding.
 const (
