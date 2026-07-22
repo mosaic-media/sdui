@@ -10,12 +10,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Tags are what the version check compares against, and a shallow
+          # clone has none — the check would pass by finding nothing.
+          fetch-depth: 0
       - uses: actions/setup-go@v5
         with:
           go-version: "1.25"
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+
+      # The npm package version and the git tag must agree. A Go module reads
+      # its own version back from the build graph; npm has no equivalent, so the
+      # number is a literal somebody has to remember — and forgetting publishes
+      # under the wrong version or silently fails to publish at all.
+      - name: Package version matches the tag
+        run: node scripts/check-versions.mjs
 
       # The schema is the single source of truth: fail if the committed bindings
       # are stale (generate + git diff).
