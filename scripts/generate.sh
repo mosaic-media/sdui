@@ -11,7 +11,15 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 SCHEMA="schema/sdui.schema.json"
-QT=(npx --yes quicktype -s schema --top-level MosaicSDUI "$SCHEMA")
+# quicktype is PINNED. Unpinned (`npx --yes quicktype`) fetches the latest,
+# which makes the generator — and therefore the drift guard that regenerates
+# and diffs — non-deterministic: a new quicktype release silently restyles the
+# output, and the guard then fails on a "stale" binding that is only a different
+# generator. 25.1.0 is the last release before 26.0.0, whose TypeScript renderer
+# stopped annotating the open `props`/`params` maps; pinning here keeps those
+# annotations (the type contract) and freezes the formatting. Bump deliberately,
+# regenerating and reviewing the diff in the same change.
+QT=(npx --yes quicktype@25.1.0 -s schema --top-level MosaicSDUI "$SCHEMA")
 
 echo "generating Go -> sdui/contract/contract.gen.go"
 "${QT[@]}" --lang go --package contract --just-types-and-package -o sdui/contract/contract.gen.go

@@ -2,6 +2,8 @@
 *.exe
 *.test
 *.out
+# ...but Dockerfile.test is the test container image, not a Go test binary.
+!Dockerfile.test
 
 # Node / TS tooling (when the ts package gains a build)
 node_modules/

@@ -1,0 +1,65 @@
+# The SDUI contract test container.
+#
+#   docker compose -f docker-compose.test.yml run --rm test
+#
+# This is the sanctioned way to run this repository's gates. Nothing is built,
+# generated or tested on the host.
+#
+# The gate that matters here is the **drift guard**: it regenerates the Go and
+# TypeScript bindings from schema/sdui.schema.json and fails if the committed
+# files moved. It is the check that keeps "the schema is the contract, the
+# bindings are output" true rather than aspirational, and it is unusually
+# sensitive to its environment — it needs go, gofmt, node and npx together, and
+# a different generator version produces a diff that looks like a stale
+# binding. Pinning that environment is the point of Dockerfile.test.
+#
+# For a shell in the same environment:
+#
+#   docker compose -f docker-compose.test.yml run --rm test bash
+name: mosaic-sdui-test
+
+services:
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    working_dir: /src/sdui
+    volumes:
+      - .:/src/sdui
+      # Caches in volumes, not on the bind mount. The npm cache earns its place
+      # here more than most: the generators are fetched with `npx --yes` on
+      # every run, and without a warm cache that is a download per invocation.
+      - mosaic-sdui-gomod:/go/pkg/mod
+      - mosaic-sdui-gobuild:/root/.cache/go-build
+      - mosaic-sdui-npm:/root/.npm
+    # The order .github/workflows/verify.yml runs it in, failing at the first
+    # failure. Keep the two in step: this command is what a contributor runs,
+    # that workflow is what refuses the push. The leading `git rev-parse` is
+    # not ceremony — check-versions *catches* a git failure and reports "no
+    # tags yet", so a git that cannot read this repository would pass the check
+    # by never running it.
+    command:
+      - bash
+      - -eu
+      - -o
+      - pipefail
+      - -c
+      - |
+        git rev-parse --git-dir > /dev/null
+        node scripts/check-versions.mjs
+        bash scripts/check-generated.sh
+        go build ./...
+        go test ./...
+        # `-p typescript@5` then `tsc`, NOT `typescript@5 tsc`: the package's
+        # binary is `tsc`, not `typescript`, so the latter form leaves npx with
+        # no executable matching the package name — "could not determine
+        # executable to run" on npm 10.9+. -p names the package explicitly and
+        # tsc is the command.
+        npx --yes -p typescript@5 tsc --noEmit --strict \
+          --module esnext --moduleResolution bundler \
+          ts/contract.gen.ts ts/ui_runtime.ts ts/ui.ts
+
+volumes:
+  mosaic-sdui-gomod:
+  mosaic-sdui-gobuild:
+  mosaic-sdui-npm:

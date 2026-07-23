@@ -156,16 +156,29 @@ Two generators, both driven by a single source of truth:
   prop a definition's template binds must be exposed by some helper — so a new
   component that nothing authors fails the build, and Go/TS can never drift.
 
+**Everything runs in a container; nothing is generated or tested on the host.**
+The full gate — version check, drift guard, Go tests, TypeScript typecheck — is
+one command:
+
 ```bash
-scripts/generate.sh          # regenerate both (schema + ui spec), then lint
-scripts/check-generated.sh   # CI: fail if any generated file is stale or lint fails
-go run ./tools/genui -lint   # just lint the ui spec against the definitions
-go test ./...                # unit + schema-conformance tests
+docker compose -f docker-compose.test.yml run --rm test
+```
+
+Regenerating, or running one step, is the same command with the step named:
+
+```bash
+docker compose -f docker-compose.test.yml run --rm test bash scripts/generate.sh        # regenerate (schema + ui spec), then lint
+docker compose -f docker-compose.test.yml run --rm test bash scripts/check-generated.sh  # fail if any generated file is stale or lint fails
+docker compose -f docker-compose.test.yml run --rm test go run ./tools/genui -lint       # just lint the ui spec against the definitions
+docker compose -f docker-compose.test.yml run --rm test go test ./...                    # unit + schema-conformance tests
 ```
 
 Editing the `ui` layer means editing `ui.spec.json` (and adding a component there
-when you add a `definitions/*.json`), never the generated files. Requires `npx`
-(quicktype is fetched on demand), `gofmt` and Go.
+when you add a `definitions/*.json`), never the generated files. This is the one
+repository that needs **two** toolchains at once — the drift guard regenerates
+Go *and* TypeScript and needs `go`, `gofmt`, `node` and `npx` together — which is
+why it has a `Dockerfile.test` of its own that pins all of them. A host with
+three of the four produces a check that passes by not running.
 
 ## Releasing
 

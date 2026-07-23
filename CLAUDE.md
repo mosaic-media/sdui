@@ -64,12 +64,45 @@ Consumers then bump: the Platform's `go.mod` require, and the `web` workspace's
 `@mosaic-media/sdui` dependency. For local cross-repo work use a `replace` (Go)
 or the workspace link (npm) temporarily — **neither may land in a commit.**
 
+## Everything runs in the container, nothing runs on the host
+
+**Do not run `go build`, `go test`, `scripts/generate.sh`, `npx` or `tsc`
+directly on this machine.** This repository's gates run inside its test
+container:
+
+```bash
+docker compose -f docker-compose.test.yml run --rm test
+```
+
+That runs the version check, the drift guard, `go build ./...`, `go test ./...`
+and the TypeScript typecheck, in the order `.github/workflows/verify.yml` runs
+them. Append `bash` for a shell in the same environment.
+
+**This repository needs the container more than any other, because it is the
+only one that needs two toolchains at once.** The schema is the contract and the
+bindings are output, so the drift guard regenerates Go *and* TypeScript from
+`schema/sdui.schema.json` and fails if the committed files moved — one command
+needing `go`, `gofmt`, `node` and `npx` together. A host with three of the four
+does not fail loudly; it produces a check that passes by not running. Two
+specific ways that happens, both real:
+
+- **A different generator version rewrites the bindings**, and the diff reads as
+  a stale binding rather than as a different generator. `Dockerfile.test` pins
+  what produces them.
+- **`scripts/check-versions.mjs` catches its own git failure** and reports "no
+  tags yet — nothing to check against", exit 0. Without a working git it passes
+  by finding nothing, which is why the container's command runs `git rev-parse`
+  first and why the image configures `safe.directory` for the bind mount.
+
+Regenerating is the same command with the script named:
+`docker compose -f docker-compose.test.yml run --rm test bash scripts/generate.sh`.
+
 ## Workflow
 
 - Commit and push this repository **separately** from `platform` and `web`.
 - **Commit author identity** must be `AdamNi-7080 <anicholls41@gmail.com>`.
-- `go build ./...`, `go test ./...`, the drift guard and the conformance tests
-  before pushing.
+- The test container green before pushing — it is the drift guard and the
+  conformance tests as well as the build.
 - Every exported type carries a doc comment saying *why*, not only what. This is
   a published contract read by people who cannot read the Platform's source.
 

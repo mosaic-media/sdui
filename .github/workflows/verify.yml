@@ -39,4 +39,8 @@ jobs:
 
       # The generated TypeScript (contract + ui authoring layer) typechecks.
       - name: TypeScript typecheck
-        run: npx --yes typescript@5 tsc --noEmit --strict --module esnext --moduleResolution bundler ts/contract.gen.ts ts/ui_runtime.ts ts/ui.ts
+        # `-p typescript@5` then `tsc`: the package's binary is `tsc`, not
+        # `typescript`, so `npx typescript@5 tsc` leaves npx with no executable
+        # matching the package name and fails ("could not determine executable
+        # to run") on npm 10.9+. -p names the package; tsc is the command.
+        run: npx --yes -p typescript@5 tsc --noEmit --strict --module esnext --moduleResolution bundler ts/contract.gen.ts ts/ui_runtime.ts ts/ui.ts

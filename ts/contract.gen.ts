@@ -11,19 +11,19 @@
  * kind uses a subset of the fields.
  */
 export interface Action {
-    actions?:   Action[];
-    input?:     { [key: string]: any };
-    kind:       ActionKind;
-    message?:   string;
-    mutation?:  string;
-    node?:      UINode;
-    nodeId?:    string;
-    params?:    { [key: string]: any };
-    partId?:    string;
-    screen?:    string;
-    surface?:   Surface;
-    tone?:      Tone;
-    url?:       string;
+    actions?:  Action[];
+    input?:    { [key: string]: any };
+    kind:      ActionKind;
+    message?:  string;
+    mutation?: string;
+    node?:     UINode;
+    nodeId?:   string;
+    params?:   { [key: string]: any };
+    partId?:   string;
+    screen?:   string;
+    surface?:  Surface;
+    tone?:     Tone;
+    url?:      string;
 }
 
 export enum ActionKind {
