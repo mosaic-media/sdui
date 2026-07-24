@@ -1,6 +1,6 @@
 {
   "name": "@mosaic-media/sdui",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "description": "Mosaic Server-Driven-UI contract: schema-generated types, the standard component-definition library, design tokens, and the generated protobuf session transport bindings.",
   "license": "Apache-2.0",
   "type": "module",

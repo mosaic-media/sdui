@@ -1,0 +1,39 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 the Mosaic authors
+
+# Generation template for the **extension module wire** (mosaic/module/v1) only.
+#
+#   buf generate --template buf.gen.module.yaml --path proto/mosaic/module
+#
+# This is a second template rather than a variation of buf.gen.yaml because the
+# two surfaces genuinely need different plugins, not because anything here is
+# duplicated for convenience.
+#
+# `buf.gen.yaml` generates **Connect** stubs, which are right for the
+# client-facing contracts: those are served over h2c to browsers and native
+# clients, where Connect's HTTP semantics are the whole point (ADR 0041).
+#
+# The module wire is not served to a client. It is served to
+# `hashicorp/go-plugin` (ADR 0077), whose plugin interface hands you a
+# `*grpc.Server` to register on and a `*grpc.ClientConn` to dial:
+#
+#     GRPCServer(*plugin.GRPCBroker, *grpc.Server) error
+#     GRPCClient(context.Context, *plugin.GRPCBroker, *grpc.ClientConn) (any, error)
+#
+# That is `protoc-gen-go-grpc`'s shape — `RegisterXServer(grpc.ServiceRegistrar,
+# XServer)` — and a Connect handler cannot satisfy it, because Connect produces
+# an `http.Handler` rather than something registrable on a `*grpc.Server`.
+# Generating Connect stubs here would produce code nothing can use, and
+# generating gRPC stubs for every package would produce the same waste in the
+# other direction.
+#
+# No TypeScript: a module is a server-side process, and no client speaks this
+# wire.
+version: v2
+plugins:
+  - local: protoc-gen-go
+    out: gen
+    opt: paths=source_relative
+  - local: protoc-gen-go-grpc
+    out: gen
+    opt: paths=source_relative

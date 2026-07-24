@@ -1,0 +1,982 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: 2026 the Mosaic authors
+
+// Package mosaic.module.v1 is the extension module boundary (ADR 0064): the
+// wire an out-of-process module speaks, carried over a Unix domain socket by
+// hashicorp/go-plugin (ADR 0077).
+//
+// **This file is not the contract.** The contract is the hand-written Go in
+// `github.com/mosaic-media/sdk` — `v1.Capability`, the eight provider roles,
+// `v1.ContentService`, `v1.Telemetry`. This is an *implementation* of those
+// interfaces on both sides of a process boundary, and nothing above the
+// Platform's capability registry knows it exists. ADR 0064 chose that
+// direction deliberately: generating the Go interfaces from this schema would
+// make the contract un-implementable except over RPC, which would break the
+// core tier, and `Caller` could not stay opaque.
+//
+// The cost is that this file and the SDK's Go are two sources of truth that
+// must agree, held together by codegen discipline and tests rather than by the
+// compiler. ADR 0077 records that cost as accepted rather than paid — a
+// msgpack alternative that would have collapsed it was rejected for reasons
+// that outweighed it.
+//
+// **Three services, two directions.** `CapabilityService` is served by the
+// module and called by the Platform. `ContentService` and `TelemetryService` are
+// served by the Platform and called *back* by the module, over go-plugin's
+// broker on the same connection. The call graph is genuinely bidirectional; a
+// module makes many ContentService calls within a single Import.
+//
+// The `Service` suffix on all three is buf's standard lint rule, satisfied
+// rather than excepted. It does not rename anything in the contract: the Go
+// interfaces these implement are still `v1.Capability` and `v1.Telemetry`.
+//
+// **Versioning.** The proto package version tracks the SDK major version, so
+// there is one number a user reasons about rather than two (ADR 0064).
+// `mosaic.module.v1` is the wire for SDK v1.x. Within a major, changes here are
+// additive only: unknown fields are ignored, and a role a module does not serve
+// is reported at handshake rather than discovered at call time.
+//
+// **Provisional in one direction.** ADR 0064 leaves callback chattiness open on
+// purpose and says it must be measured against a real import before the
+// protocol is fixed, with the service shape allowed to send back coarser,
+// batched verbs. Such verbs would be *added* to ContentService, which is an
+// additive change within this major and breaks nothing already written here.
+syntax = "proto3";
+
+package mosaic.module.v1;
+
+option go_package = "github.com/mosaic-media/contracts/gen/mosaic/module/v1;modulev1";
+
+// ─── Boundary primitives ────────────────────────────────────────────────────
+
+// Caller is the principal a module acts as, and it is the one type whose
+// meaning *changes* by crossing the boundary (ADR 0064).
+//
+// In process, `v1.Caller` wraps a session reference and is meaningless outside
+// the invocation that produced it. Serialized, it becomes something a module
+// can retain. So the Platform mints a handle when it invokes a module and
+// revokes it when the invocation returns; the module presents it on every
+// callback and the Platform resolves it against a table of live invocations,
+// rejecting anything it does not find.
+//
+// Deliberately not a signed token with a TTL: a TTL is a window in which a
+// retained value still works, and retention is the entire risk that serializing
+// Caller introduces. A handle that stops resolving the instant Import returns
+// has no window.
+message Caller {
+  // Handle is opaque to the module. It is not a session id and must not be
+  // parsed, stored or reused across invocations.
+  string handle = 1;
+}
+
+// ErrorCategory is the Platform's closed error vocabulary. Every contract error
+// maps to exactly one of these, and a module's callbacks see only these rather
+// than driver-specific errors.
+//
+// It is carried explicitly rather than mapped onto gRPC status codes, because
+// the mapping is not one-to-one in either direction and a lossy round trip
+// would turn a Conflict into an Unknown at the boundary — the module would then
+// have to guess, which is what the closed vocabulary exists to prevent.
+enum ErrorCategory {
+  ERROR_CATEGORY_UNSPECIFIED = 0;
+  ERROR_CATEGORY_INVALID_ARGUMENT = 1;
+  ERROR_CATEGORY_UNAUTHENTICATED = 2;
+  ERROR_CATEGORY_PERMISSION_DENIED = 3;
+  ERROR_CATEGORY_NOT_FOUND = 4;
+  ERROR_CATEGORY_CONFLICT = 5;
+  ERROR_CATEGORY_UNAVAILABLE = 6;
+  ERROR_CATEGORY_INTERNAL = 7;
+}
+
+// Error is a Platform error crossing the boundary with its category intact.
+message Error {
+  ErrorCategory category = 1;
+  string message = 2;
+}
+
+// ─── Content vocabulary ─────────────────────────────────────────────────────
+//
+// The open vocabularies (ADR 0015) stay strings on the wire, exactly as they
+// are in Go and in the database. Making media_type an enum here would close a
+// vocabulary the architecture deliberately leaves open, and every new media
+// type would become a wire change. The closed ones (node kind, part role,
+// relation origin, statuses) are enums, matching their CHECK constraints.
+
+// NodeKind is closed — the Platform branches on it.
+enum NodeKind {
+  NODE_KIND_UNSPECIFIED = 0;
+  NODE_KIND_WORK = 1;
+  NODE_KIND_CONTAINER = 2;
+  NODE_KIND_ITEM = 3;
+}
+
+// NodeStatus records whether a node still has a source behind it. Orphaned is
+// not deleted: ADR 0013 is explicit that removing the last binding leaves the
+// node standing.
+enum NodeStatus {
+  NODE_STATUS_UNSPECIFIED = 0;
+  NODE_STATUS_ACTIVE = 1;
+  NODE_STATUS_ORPHANED = 2;
+}
+
+enum PartRole {
+  PART_ROLE_UNSPECIFIED = 0;
+  PART_ROLE_EDITION = 1;
+  PART_ROLE_SEGMENT = 2;
+}
+
+enum LocationScheme {
+  LOCATION_SCHEME_UNSPECIFIED = 0;
+  LOCATION_SCHEME_LOCAL = 1;
+  LOCATION_SCHEME_REMOTE = 2;
+}
+
+// MediaLocation is where a Part's bytes are, without asserting they are
+// reachable. A remote location is a snapshot of a URL or magnet, not a promise.
+message MediaLocation {
+  LocationScheme scheme = 1;
+  string provider = 2;
+  string ref = 3;
+}
+
+// ArtworkCandidate is one image a source offered for one slot. ADR 0074 makes
+// artwork a candidate set rather than one string per slot, because a source
+// whose entire value is the set (forty posters, each with a language and a vote
+// count) loses its reason to exist if the Platform keeps one.
+message ArtworkCandidate {
+  // Slot is open text — poster, backdrop, logo, clearart, banner, disc, and
+  // whatever a future source names.
+  string slot = 1;
+  string url = 2;
+  string source = 3;
+  // Language is empty for textless art, which the Platform's selection rule
+  // *prefers* for backdrops and landscapes.
+  string language = 4;
+  double rank = 5;
+}
+
+// Artwork is a node's stored artwork: the resolved slots plus the candidate set
+// they were chosen from.
+message Artwork {
+  string poster = 1;
+  string landscape = 2;
+  string backdrop = 3;
+  string logo = 4;
+  repeated ArtworkCandidate candidates = 5;
+}
+
+// Node is one position in the containment tree (ADR 0013). Depth is whatever a
+// work's real structure needs; nothing may assume a node has a parent or that a
+// work's children are containers.
+message Node {
+  string id = 1;
+  string work_id = 2;
+  // Empty for a Work, set for everything else. proto3 has no nullable scalar,
+  // and empty is unambiguous here because a node id is never the empty string.
+  string parent_id = 3;
+  NodeKind kind = 4;
+  // Open vocabularies (ADR 0015).
+  string media_type = 5;
+  string container_type = 6;
+  string item_type = 7;
+  string title = 8;
+  double natural_order = 9;
+  NodeStatus status = 10;
+  // Raw JSON documents, carried uninterpreted. The Platform does not validate
+  // attributes by design (ADR 0013), and external_ids is a flat
+  // scheme-to-string map that NodeStore.FindByExternalID reads.
+  bytes external_ids = 11;
+  bytes attributes = 12;
+  Artwork artwork = 13;
+  // RFC 3339 UTC. Times are strings rather than google.protobuf.Timestamp to
+  // keep this schema free of well-known-type imports, matching how the sibling
+  // contracts in this workspace already carry them.
+  string created_at = 14;
+  string updated_at = 15;
+}
+
+// Part is playable bytes attached to an item.
+message Part {
+  string id = 1;
+  string node_id = 2;
+  PartRole role = 3;
+  string edition_label = 4;
+  double natural_order = 5;
+  MediaLocation location = 6;
+  string container = 7;
+  string video_codec = 8;
+  string audio_codec = 9;
+  int32 width = 10;
+  int32 height = 11;
+  string hdr_format = 12;
+  // Nanoseconds, matching Go's time.Duration exactly rather than approximating
+  // it in seconds.
+  int64 duration_nanos = 13;
+  int64 bitrate_bps = 14;
+  int64 size_bytes = 15;
+  bytes attributes = 16;
+  string created_at = 17;
+  string updated_at = 18;
+}
+
+enum RelationOrigin {
+  RELATION_ORIGIN_UNSPECIFIED = 0;
+  RELATION_ORIGIN_SYSTEM_INFERRED = 1;
+  RELATION_ORIGIN_PROVIDER_SUPPLIED = 2;
+  RELATION_ORIGIN_USER_CONFIRMED = 3;
+}
+
+// Relation is one edge of the association graph. Edges are written once —
+// RelationStore has no Update, and confidence decay is deliberately unbuilt
+// (ADR 0013).
+message Relation {
+  string id = 1;
+  string from_node_id = 2;
+  string to_node_id = 3;
+  string type = 4;
+  double confidence = 5;
+  RelationOrigin origin = 6;
+  string created_at = 7;
+}
+
+enum MatchMethod {
+  MATCH_METHOD_UNSPECIFIED = 0;
+  MATCH_METHOD_EXTERNAL_ID_EXACT = 1;
+  MATCH_METHOD_FINGERPRINT = 2;
+  MATCH_METHOD_FUZZY_TITLE = 3;
+  MATCH_METHOD_USER_SELECTED = 4;
+}
+
+enum BindingStatus {
+  BINDING_STATUS_UNSPECIFIED = 0;
+  BINDING_STATUS_CONFIRMED = 1;
+  BINDING_STATUS_PENDING_REVIEW = 2;
+  BINDING_STATUS_REJECTED = 3;
+}
+
+// SourceBinding records that a source resolves to a node.
+message SourceBinding {
+  string id = 1;
+  string node_id = 2;
+  string source_provider = 3;
+  string source_ref = 4;
+  double match_confidence = 5;
+  MatchMethod match_method = 6;
+  BindingStatus status = 7;
+  string created_at = 8;
+  string updated_at = 9;
+}
+
+// ContentRef is the stable handle a virtual result carries so the Platform can
+// dedup it against the library and hand it back to the module to materialise
+// (ADR 0028). Produced by a read role, consumed by Import.
+message ContentRef {
+  // Provider is the manifest id of the capability that produced this ref and
+  // can materialise it. A search fans out to many providers, so each result
+  // must name its own.
+  string provider = 1;
+  // The source's own identifiers. The module owns their meaning; the Platform
+  // never parses them.
+  string native_id = 2;
+  string native_type = 3;
+  string media_type = 4;
+  // The provider identity the Platform dedups on (ADR 0028's union).
+  string external_scheme = 5;
+  string external_id = 6;
+}
+
+// ─── Virtual content (ADR 0028) ─────────────────────────────────────────────
+//
+// These are transient projections, never object-graph nodes. Only Import
+// writes nodes, and it does so from a ContentRef a read role produced.
+
+message SearchResult {
+  ContentRef ref = 1;
+  string title = 2;
+  int32 year = 3;
+  string poster = 4;
+  // Platform-filled when it unions provider results with the library. A
+  // provider leaves these zero.
+  bool in_library = 5;
+  string node_id = 6;
+}
+
+// CatalogItem repeats SearchResult's shape rather than reusing it, deliberately
+// and for the same reason the Go types do: they are produced by different roles
+// and answer different questions, and collapsing them would mean a later field
+// belonging to one appearing on the other.
+message CatalogItem {
+  ContentRef ref = 1;
+  string title = 2;
+  int32 year = 3;
+  string poster = 4;
+  bool in_library = 5;
+  string node_id = 6;
+}
+
+message RelatedItem {
+  ContentRef ref = 1;
+  string title = 2;
+  int32 year = 3;
+  string poster = 4;
+  bool in_library = 5;
+  string node_id = 6;
+}
+
+// Catalog is a view the source computes (Popular, Trending), not a container in
+// the object graph. Materialising a catalog copies its items into the library;
+// it does not import the catalog as an object.
+message Catalog {
+  string id = 1;
+  string native_type = 2;
+  string name = 3;
+}
+
+message Person {
+  string name = 1;
+  string role = 2;
+  string photo = 3;
+}
+
+// EpisodePreview is what a detail screen shows so a user can read the episode
+// list *before* deciding to add a series, including for a virtual series with
+// no materialised tree (ADR 0034). Read-only, never persisted.
+message EpisodePreview {
+  int32 season = 1;
+  int32 episode = 2;
+  string title = 3;
+  string overview = 4;
+  string thumbnail = 5;
+  // The source's air date as it provides it, display-only — the Platform does
+  // not parse it.
+  string released = 6;
+}
+
+message Collection {
+  string name = 1;
+  string overview = 2;
+  string poster = 3;
+  string backdrop = 4;
+  repeated RelatedItem items = 5;
+}
+
+message Trailer {
+  string name = 1;
+  string site = 2;
+  string key = 3;
+  bool official = 4;
+}
+
+enum WatchOfferType {
+  WATCH_OFFER_TYPE_UNSPECIFIED = 0;
+  WATCH_OFFER_TYPE_SUBSCRIPTION = 1;
+  WATCH_OFFER_TYPE_RENT = 2;
+  WATCH_OFFER_TYPE_BUY = 3;
+  WATCH_OFFER_TYPE_ADS = 4;
+  WATCH_OFFER_TYPE_FREE = 5;
+}
+
+message WatchOffer {
+  string provider = 1;
+  string logo = 2;
+  WatchOfferType type = 3;
+}
+
+message WatchAvailability {
+  string region = 1;
+  string link = 2;
+  // Attribution is required by some upstreams as a condition of use, so it
+  // travels with the data rather than being reconstructed by a consumer.
+  string attribution = 3;
+  repeated WatchOffer offers = 4;
+}
+
+// ContentMetadata is a descriptive projection of one title. Optional
+// sub-messages are absent rather than zero-valued: proto3 message presence is
+// what distinguishes "this source has no collection" from "an empty one".
+message ContentMetadata {
+  ContentRef ref = 1;
+  string title = 2;
+  int32 year = 3;
+  string overview = 4;
+  string poster = 5;
+  string backdrop = 6;
+  repeated string genres = 7;
+  string logo = 8;
+  repeated Person cast = 9;
+  double rating = 10;
+  string runtime = 11;
+  repeated EpisodePreview episodes = 12;
+  repeated string keywords = 13;
+  string certification = 14;
+  repeated RelatedItem similar = 15;
+  optional Collection collection = 16;
+  repeated Trailer trailers = 17;
+  optional WatchAvailability watch = 18;
+}
+
+message StreamLink {
+  string label = 1;
+  string title = 2;
+  string quality = 3;
+  int64 size_bytes = 4;
+  int32 seeders = 5;
+  MediaLocation location = 6;
+}
+
+message Subtitle {
+  string language = 1;
+  string url = 2;
+  string id = 3;
+}
+
+message ExternalIdentity {
+  string scheme = 1;
+  string id = 2;
+}
+
+// ─── Capability: served by the module ───────────────────────────────────────
+
+// Manifest is the module's self-declaration. The Platform registers it under
+// this identity and routes imports to it.
+message Manifest {
+  string id = 1;
+  // The module's own version, not the SDK's.
+  string version = 2;
+  string name = 3;
+  // The provider roles this module fills (ADR 0027). The handshake verifies
+  // that every declared role is actually served, so a role named but not
+  // implemented is refused at connect time rather than discovered at call time.
+  repeated string provides = 4;
+}
+
+message ManifestRequest {}
+
+message ManifestResponse {
+  Manifest manifest = 1;
+}
+
+// ImportRequest is what the Platform hands a capability for one invocation.
+message ImportRequest {
+  Caller caller = 1;
+  ContentRef ref = 2;
+  // The module's user-managed configuration document — opaque JSON the Platform
+  // stores and hands back without interpreting (ADR 0021). It crosses unchanged,
+  // which is a small vindication of having stored it uninterpreted.
+  bytes settings = 3;
+}
+
+message ImportResponse {
+  string work_id = 1;
+  // True when the content was already present, in which case the import was a
+  // no-op that returned the existing work's id.
+  bool already_known = 2;
+  int32 containers = 3;
+  int32 items = 4;
+  int32 parts = 5;
+}
+
+// Every provider request carries the caller and the module's settings, matching
+// the Go interfaces exactly: a read role is invoked with the same authority and
+// the same configuration as an import.
+
+message MetadataRequest {
+  Caller caller = 1;
+  bytes settings = 2;
+  ContentRef ref = 3;
+}
+
+message MetadataResponse {
+  ContentMetadata metadata = 1;
+}
+
+message SearchRequest {
+  Caller caller = 1;
+  bytes settings = 2;
+  string text = 3;
+  string media_type = 4;
+  int32 limit = 5;
+}
+
+message SearchResponse {
+  repeated SearchResult results = 1;
+}
+
+message CatalogsRequest {
+  Caller caller = 1;
+  bytes settings = 2;
+}
+
+message CatalogsResponse {
+  repeated Catalog catalogs = 1;
+}
+
+message CatalogItemsRequest {
+  Caller caller = 1;
+  bytes settings = 2;
+  string catalog_id = 3;
+  string native_type = 4;
+  int32 skip = 5;
+}
+
+message CatalogItemsResponse {
+  repeated CatalogItem items = 1;
+}
+
+message StreamsRequest {
+  Caller caller = 1;
+  bytes settings = 2;
+  ContentRef ref = 3;
+  int32 season = 4;
+  int32 episode = 5;
+}
+
+message StreamsResponse {
+  repeated StreamLink streams = 1;
+}
+
+message SubtitlesRequest {
+  Caller caller = 1;
+  bytes settings = 2;
+  ContentRef ref = 3;
+}
+
+message SubtitlesResponse {
+  repeated Subtitle subtitles = 1;
+}
+
+// ArtworkRequest is keyed by external identities rather than by a ContentRef,
+// because an artwork provider produces no results of its own and is therefore
+// never named by one (ADR 0075). The Platform reaches it through an enrichment
+// pass over content something else already identified.
+message ArtworkRequest {
+  Caller caller = 1;
+  bytes settings = 2;
+  repeated ExternalIdentity identities = 3;
+  string media_type = 4;
+  // Season art, when the source keys it that way. Zero means the work itself.
+  int32 season = 5;
+}
+
+message ArtworkResponse {
+  repeated ArtworkCandidate candidates = 1;
+}
+
+enum PlaybackKind {
+  PLAYBACK_KIND_UNSPECIFIED = 0;
+  PLAYBACK_KIND_DIRECT = 1;
+}
+
+// PlaybackRequest carries the whole Part rather than its id: a playback
+// provider resolves bytes and must not have to read the graph to do it.
+message PlaybackRequest {
+  Caller caller = 1;
+  bytes settings = 2;
+  Part part = 3;
+}
+
+message PlaybackResponse {
+  PlaybackKind kind = 1;
+  string url = 2;
+  map<string, string> headers = 3;
+}
+
+message SettingsUIRequest {
+  Caller caller = 1;
+  bytes settings = 2;
+}
+
+message SettingsUIResponse {
+  // An encoded mosaic.sdui.v1.UINode subtree. Carried as bytes rather than as
+  // the typed message so this schema takes no dependency on the SDUI contract:
+  // a module that fills no settings_ui role should not have to resolve it, and
+  // the Platform decodes it at the seam where it already holds that contract.
+  bytes ui = 1;
+}
+
+// CapabilityService is the module-served half of the boundary, implementing the
+// SDK's `v1.Capability` plus the eight provider roles. The Platform holds a
+// proxy implementing those Go interfaces and dispatching to these methods;
+// the capability registry cannot tell that proxy from a local struct, which is
+// the property the whole design is arranged around (ADR 0064).
+//
+// A module serves Manifest and Import always, and each role method only if its
+// manifest declares the matching role. Calling an undeclared role is a
+// programming error on the Platform side rather than a runtime condition,
+// because the handshake already refused a mismatch.
+service CapabilityService {
+  rpc GetManifest(ManifestRequest) returns (ManifestResponse);
+  rpc Import(ImportRequest) returns (ImportResponse);
+
+  rpc Metadata(MetadataRequest) returns (MetadataResponse);
+  rpc Search(SearchRequest) returns (SearchResponse);
+  rpc Catalogs(CatalogsRequest) returns (CatalogsResponse);
+  rpc CatalogItems(CatalogItemsRequest) returns (CatalogItemsResponse);
+  rpc Streams(StreamsRequest) returns (StreamsResponse);
+  rpc Subtitles(SubtitlesRequest) returns (SubtitlesResponse);
+  rpc Artwork(ArtworkRequest) returns (ArtworkResponse);
+  rpc Playback(PlaybackRequest) returns (PlaybackResponse);
+  rpc SettingsUI(SettingsUIRequest) returns (SettingsUIResponse);
+}
+
+// ─── ContentService: served by the Platform, called back by the module ──────
+//
+// This is the chatty direction, and the one ADR 0064 leaves open pending
+// measurement against a real import. Every method carries the Caller handle,
+// and every one of them re-authenticates and re-authorises as the invoking user
+// (ADR 0017) — a capability originates no authority.
+
+message AddContentWorkRequest {
+  Caller caller = 1;
+  string media_type = 2;
+  string title = 3;
+  bytes external_ids = 4;
+  bytes attributes = 5;
+  Artwork artwork = 6;
+}
+
+message AddContentWorkResponse {
+  Node work = 1;
+}
+
+message AddContentChildRequest {
+  Caller caller = 1;
+  string parent_id = 2;
+  NodeKind kind = 3;
+  string container_type = 4;
+  string item_type = 5;
+  string title = 6;
+  double natural_order = 7;
+  bytes external_ids = 8;
+  bytes attributes = 9;
+  Artwork artwork = 10;
+}
+
+message AddContentChildResponse {
+  Node node = 1;
+}
+
+message AttachContentPartRequest {
+  Caller caller = 1;
+  string node_id = 2;
+  PartRole role = 3;
+  string edition_label = 4;
+  double natural_order = 5;
+  MediaLocation location = 6;
+  string container = 7;
+  string video_codec = 8;
+  string audio_codec = 9;
+  int32 width = 10;
+  int32 height = 11;
+  string hdr_format = 12;
+  int64 duration_nanos = 13;
+  int64 bitrate_bps = 14;
+  int64 size_bytes = 15;
+  bytes attributes = 16;
+}
+
+message AttachContentPartResponse {
+  Part part = 1;
+}
+
+// SetContentArtwork is the one write here that updates an existing node rather
+// than creating one.
+message SetContentArtworkRequest {
+  Caller caller = 1;
+  string node_id = 2;
+  Artwork artwork = 3;
+}
+
+message SetContentArtworkResponse {
+  Node node = 1;
+}
+
+message RelateContentRequest {
+  Caller caller = 1;
+  string from_node_id = 2;
+  string to_node_id = 3;
+  string type = 4;
+  double confidence = 5;
+  RelationOrigin origin = 6;
+}
+
+message RelateContentResponse {
+  Relation relation = 1;
+}
+
+message BindContentSourceRequest {
+  Caller caller = 1;
+  string node_id = 2;
+  string source_provider = 3;
+  string source_ref = 4;
+  double match_confidence = 5;
+  MatchMethod match_method = 6;
+  BindingStatus status = 7;
+}
+
+message BindContentSourceResponse {
+  SourceBinding binding = 1;
+}
+
+// BindingResolution has exactly two values, and a split is not a third one. A
+// merge is CONFIRM, a rejection is REJECT (which keeps the row so the same weak
+// match is not proposed again), and a split is CONFIRM with move_to_node_id
+// set. Adding a MOVE value here would invent a resolution the Platform does not
+// have.
+enum BindingResolution {
+  BINDING_RESOLUTION_UNSPECIFIED = 0;
+  BINDING_RESOLUTION_CONFIRM = 1;
+  BINDING_RESOLUTION_REJECT = 2;
+}
+
+message ResolveContentBindingRequest {
+  Caller caller = 1;
+  string binding_id = 2;
+  BindingResolution resolution = 3;
+  // Re-targets the binding before confirming — a split. Only valid with
+  // CONFIRM.
+  string move_to_node_id = 4;
+}
+
+message ResolveContentBindingResponse {
+  SourceBinding binding = 1;
+}
+
+message SearchContentRequest {
+  Caller caller = 1;
+  string title = 2;
+  string media_type = 3;
+  NodeKind kind = 4;
+  bytes attributes_contain = 5;
+  int32 limit = 6;
+}
+
+message SearchContentResponse {
+  repeated Node nodes = 1;
+}
+
+message FindContentByExternalIDRequest {
+  Caller caller = 1;
+  string scheme = 2;
+  string value = 3;
+}
+
+message FindContentByExternalIDResponse {
+  repeated Node nodes = 1;
+}
+
+message GetContentNodeRequest {
+  Caller caller = 1;
+  string node_id = 2;
+  bool with_children = 3;
+}
+
+message GetContentNodeResponse {
+  Node node = 1;
+  repeated Node children = 2;
+}
+
+message ListContentPartsRequest {
+  Caller caller = 1;
+  string node_id = 2;
+}
+
+message ListContentPartsResponse {
+  repeated Part parts = 1;
+}
+
+// PlaybackState is per-user. Everything above operates on an install-global
+// graph; a position belongs to a person, and a consumer records progress as its
+// invoking user so a module can never write another user's position (ADR 0046).
+message PlaybackState {
+  string node_id = 1;
+  string part_id = 2;
+  int64 position_nanos = 3;
+  int64 duration_nanos = 4;
+  bool finished = 5;
+  // True when a user said so explicitly, overriding the derived threshold in
+  // either direction.
+  bool finished_explicit = 6;
+  string updated_at = 7;
+}
+
+message RecordPlaybackProgressRequest {
+  Caller caller = 1;
+  string node_id = 2;
+  string part_id = 3;
+  int64 position_nanos = 4;
+  int64 duration_nanos = 5;
+}
+
+message RecordPlaybackProgressResponse {
+  PlaybackState state = 1;
+}
+
+message SetPlaybackFinishedRequest {
+  Caller caller = 1;
+  string node_id = 2;
+  bool finished = 3;
+}
+
+message SetPlaybackFinishedResponse {
+  PlaybackState state = 1;
+}
+
+message GetPlaybackStateRequest {
+  Caller caller = 1;
+  string node_id = 2;
+}
+
+message GetPlaybackStateResponse {
+  PlaybackState state = 1;
+  bool found = 2;
+}
+
+message ListPlaybackStatesRequest {
+  Caller caller = 1;
+  repeated string node_ids = 2;
+}
+
+message ListPlaybackStatesResponse {
+  map<string, PlaybackState> states = 1;
+}
+
+message ListInProgressRequest {
+  Caller caller = 1;
+  int32 limit = 2;
+}
+
+message InProgressItem {
+  Node node = 1;
+  PlaybackState state = 2;
+}
+
+message ListInProgressResponse {
+  repeated InProgressItem items = 1;
+}
+
+// ContentService is everything a capability does to the object graph, served by
+// the Platform over go-plugin's broker.
+//
+// A module owns no schema (ADR 0012) and no content storage (ADR 0002 §2):
+// content lives in the Platform's object graph, in the Platform's single
+// consistency domain, and nowhere else. What a separate process makes possible
+// is a module-*local* cache or cursor in its own file — which must be
+// destroyable without data loss, because no part of a user's library lives
+// there.
+service ContentService {
+  rpc AddContentWork(AddContentWorkRequest) returns (AddContentWorkResponse);
+  rpc AddContentChild(AddContentChildRequest) returns (AddContentChildResponse);
+  rpc AttachContentPart(AttachContentPartRequest) returns (AttachContentPartResponse);
+  rpc SetContentArtwork(SetContentArtworkRequest) returns (SetContentArtworkResponse);
+  rpc RelateContent(RelateContentRequest) returns (RelateContentResponse);
+  rpc BindContentSource(BindContentSourceRequest) returns (BindContentSourceResponse);
+  rpc ResolveContentBinding(ResolveContentBindingRequest) returns (ResolveContentBindingResponse);
+
+  rpc SearchContent(SearchContentRequest) returns (SearchContentResponse);
+  rpc FindContentByExternalID(FindContentByExternalIDRequest) returns (FindContentByExternalIDResponse);
+  rpc GetContentNode(GetContentNodeRequest) returns (GetContentNodeResponse);
+  rpc ListContentParts(ListContentPartsRequest) returns (ListContentPartsResponse);
+
+  rpc RecordPlaybackProgress(RecordPlaybackProgressRequest) returns (RecordPlaybackProgressResponse);
+  rpc SetPlaybackFinished(SetPlaybackFinishedRequest) returns (SetPlaybackFinishedResponse);
+  rpc GetPlaybackState(GetPlaybackStateRequest) returns (GetPlaybackStateResponse);
+  rpc ListPlaybackStates(ListPlaybackStatesRequest) returns (ListPlaybackStatesResponse);
+  rpc ListInProgress(ListInProgressRequest) returns (ListInProgressResponse);
+}
+
+// ─── Telemetry: served by the Platform, called back by the module ───────────
+
+// RedactionClass is the PII boundary (ADR 0056). It travels with the field
+// rather than being inferred at the sink, because a sink that has to guess will
+// guess wrong on exactly the fields that matter.
+enum RedactionClass {
+  REDACTION_CLASS_UNSPECIFIED = 0;
+  // Safe to record as-is.
+  REDACTION_CLASS_NONE = 1;
+  REDACTION_CLASS_SENSITIVE = 2;
+  // Never recorded; dropped at the boundary.
+  REDACTION_CLASS_SECRET = 3;
+  // A stable identifier — hashed rather than dropped, so it still correlates.
+  REDACTION_CLASS_IDENTIFIER = 4;
+}
+
+// Field is one structured attribute. The value is carried as a string with its
+// own type tag rather than as a oneof of scalars, matching how the Go Telemetry
+// surface already flattens them — the sink writes strings either way.
+message Field {
+  string key = 1;
+  string value = 2;
+  RedactionClass redaction = 3;
+}
+
+enum LogLevel {
+  LOG_LEVEL_UNSPECIFIED = 0;
+  LOG_LEVEL_DEBUG = 1;
+  LOG_LEVEL_INFO = 2;
+  LOG_LEVEL_WARN = 3;
+  LOG_LEVEL_ERROR = 4;
+}
+
+message LogRequest {
+  Caller caller = 1;
+  LogLevel level = 2;
+  string message = 3;
+  repeated Field fields = 4;
+  // The span this log belongs to, empty outside one.
+  string span_id = 5;
+}
+
+message LogResponse {}
+
+message StartSpanRequest {
+  Caller caller = 1;
+  string name = 2;
+  repeated Field attributes = 3;
+  // The parent span, empty for a root span within this invocation. The
+  // Platform stitches it to the invocation's own trace, so a module never sees
+  // or sets a trace id — ADR 0054 makes the correlation id the trace id, and
+  // letting a module choose one would let it forge provenance.
+  string parent_span_id = 4;
+}
+
+message StartSpanResponse {
+  string span_id = 1;
+}
+
+message SpanAttributesRequest {
+  Caller caller = 1;
+  string span_id = 2;
+  repeated Field attributes = 3;
+}
+
+message SpanAttributesResponse {}
+
+message FailSpanRequest {
+  Caller caller = 1;
+  string span_id = 2;
+  string message = 3;
+  ErrorCategory category = 4;
+}
+
+message FailSpanResponse {}
+
+message EndSpanRequest {
+  Caller caller = 1;
+  string span_id = 2;
+}
+
+message EndSpanResponse {}
+
+// TelemetryService is how a module observes (ADR 0059). The SDK declares its own
+// interface rather than re-exporting OpenTelemetry, specifically so a contract
+// does not distribute the Platform's taste in libraries — and that decision is
+// what lets this cross a process boundary at all: the module calls the same
+// methods over a different transport, and ADR 0059's surface is unaffected.
+service TelemetryService {
+  rpc Log(LogRequest) returns (LogResponse);
+  rpc StartSpan(StartSpanRequest) returns (StartSpanResponse);
+  rpc SetSpanAttributes(SpanAttributesRequest) returns (SpanAttributesResponse);
+  rpc FailSpan(FailSpanRequest) returns (FailSpanResponse);
+  rpc EndSpan(EndSpanRequest) returns (EndSpanResponse);
+}
